@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.env.local
+assistant.local.env.ps1
+cloudrun-env*.yaml
+cloudflared-temp*.log
+tmp_video_frames*/
+data/

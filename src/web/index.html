@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Personal Assistant</title>
+    <link rel="stylesheet" href="/static/app.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Personal Assistant</p>
+          <h1 class="app-title">Operations Console</h1>
+        </div>
+        <div class="topbar-badge">Hosted Workspace</div>
+      </header>
+
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Daily Command Center</p>
+          <h2>Run your assistant, planning, and calendar sync from one polished workspace.</h2>
+          <p class="hero-text">
+            Review what matters now, drive the assistant with natural language, and keep your hosted Google Calendar flow visible without digging through docs or raw endpoints.
+          </p>
+          <div class="suggestion-row">
+            <button class="suggestion-chip" data-command="remind me tomorrow at 8am to call my dentist every week">Weekly reminder</button>
+            <button class="suggestion-chip" data-command="i need to submit taxes tomorrow at 6pm">Quick task</button>
+            <button class="suggestion-chip" data-command="create a bill for internet due on 2026-04-10 for 79 monthly">Recurring bill</button>
+            <button class="suggestion-chip" data-command="add 2 apples and milk to my shopping list">Shopping list</button>
+          </div>
+        </div>
+        <div class="hero-metrics">
+          <article class="metric-card">
+            <span class="metric-label">Tasks Today</span>
+            <strong id="metric-tasks">0</strong>
+            <span class="metric-footnote">Needs action</span>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Bills This Week</span>
+            <strong id="metric-bills">0</strong>
+            <span class="metric-footnote">Upcoming payments</span>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Due Reminders</span>
+            <strong id="metric-reminders">0</strong>
+            <span class="metric-footnote">Pending alerts</span>
+          </article>
+        </div>
+      </section>
+
+      <main class="workspace">
+        <section class="main-column">
+        <section class="chat-panel panel">
+          <div class="panel-heading">
+            <div>
+              <p class="panel-kicker">Assistant Chat</p>
+              <h2>Send a command</h2>
+            </div>
+            <button id="refresh-summary" class="ghost-button">Refresh Workspace</button>
+          </div>
+
+          <div id="conversation" class="conversation">
+            <article class="bubble bubble-assistant">
+              <p>Try something like “show my tasks” or “move my reminder dentist to friday at 3pm”.</p>
+            </article>
+          </div>
+
+          <form id="command-form" class="composer">
+            <label class="sr-only" for="command-input">Assistant command</label>
+            <textarea
+              id="command-input"
+              name="command"
+              rows="3"
+              placeholder="Type a natural command..."
+            ></textarea>
+            <div class="composer-actions">
+              <span class="composer-hint">Natural language is supported</span>
+              <button type="submit" class="primary-button">Send Command</button>
+            </div>
+          </form>
+        </section>
+
+        <article class="panel summary-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="panel-kicker">Overview</p>
+              <h2>What needs attention</h2>
+            </div>
+            <span id="summary-timestamp" class="timestamp">Waiting for data</span>
+          </div>
+          <div id="summary-grid" class="summary-grid"></div>
+        </article>
+        </section>
+
+        <section class="dashboard-grid">
+          <article class="panel calendar-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="panel-kicker">Google Calendar</p>
+                <h2>Connection and sync</h2>
+              </div>
+              <span id="calendar-status-pill" class="status-pill">Checking</span>
+            </div>
+            <p id="calendar-status-text" class="hero-text compact-text">
+              Checking Google Calendar connection and sync status.
+            </p>
+            <div class="calendar-actions">
+              <a id="calendar-connect-link" class="primary-button button-link" href="/connect-google-calendar">Connect Calendar</a>
+              <button id="calendar-test-button" class="ghost-button" type="button">Test Connection</button>
+              <button id="calendar-sync-button" class="ghost-button" type="button">Sync Next 14 Days</button>
+            </div>
+            <div id="calendar-sync-result" class="inline-note">No sync has been run from this page yet.</div>
+            <div class="calendar-meta-grid">
+              <article class="summary-tile">
+                <span class="metric-label">Calendar Email</span>
+                <strong id="calendar-email">Unknown</strong>
+              </article>
+              <article class="summary-tile">
+                <span class="metric-label">Profile</span>
+                <strong id="calendar-profile">primary</strong>
+              </article>
+            </div>
+          </article>
+
+          <article class="panel list-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="panel-kicker">Today</p>
+                <h2>Today's agenda</h2>
+              </div>
+              <span id="today-agenda-date" class="timestamp">Waiting for data</span>
+            </div>
+            <div id="today-agenda" class="agenda-stack"></div>
+          </article>
+
+          <article class="panel list-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="panel-kicker">Tomorrow</p>
+                <h2>Tomorrow's agenda</h2>
+              </div>
+              <span id="tomorrow-agenda-date" class="timestamp">Waiting for data</span>
+            </div>
+            <div id="tomorrow-agenda" class="agenda-stack"></div>
+          </article>
+
+          <article class="panel list-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="panel-kicker">Active Items</p>
+                <h2>Tasks</h2>
+              </div>
+            </div>
+            <div id="tasks-list" class="list-stack"></div>
+          </article>
+
+          <article class="panel list-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="panel-kicker">Pending Alerts</p>
+                <h2>Reminders</h2>
+              </div>
+            </div>
+            <div id="reminders-list" class="list-stack"></div>
+          </article>
+
+          <article class="panel list-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="panel-kicker">Money</p>
+                <h2>Bills</h2>
+              </div>
+            </div>
+            <div id="bills-list" class="list-stack"></div>
+          </article>
+
+          <article class="panel list-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="panel-kicker">Errands</p>
+                <h2>Shopping List</h2>
+              </div>
+            </div>
+            <div id="shopping-list" class="list-stack"></div>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

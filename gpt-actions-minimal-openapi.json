@@ -1,0 +1,685 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Personal Assistant GPT Actions",
+    "version": "1.0.0",
+    "description": "Minimal action schema for the hosted Personal Assistant backend."
+  },
+  "servers": [
+    {
+      "url": "https://personal-assistant-318363109395.us-central1.run.app"
+    }
+  ],
+  "paths": {
+    "/assistant/command": {
+      "post": {
+        "operationId": "assistantCommand",
+        "summary": "Handle natural language request",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantCommandRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Assistant command result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantCommandResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/assistant/undo": {
+      "post": {
+        "operationId": "assistantUndo",
+        "summary": "Undo last assistant change",
+        "responses": {
+          "200": {
+            "description": "Undo result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UndoActionResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/summary": {
+      "get": {
+        "operationId": "getSummary",
+        "summary": "Get summary",
+        "description": "Use for broad overview questions such as what is due, what is overdue, and what needs attention this week.",
+        "responses": {
+          "200": {
+            "description": "Assistant summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantSummary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agenda": {
+      "get": {
+        "operationId": "getAgenda",
+        "summary": "Get agenda",
+        "description": "Use only when the user names a specific date. Prefer /agenda/today and /agenda/tomorrow for relative-day questions.",
+        "parameters": [
+          {
+            "name": "for_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Daily agenda",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DailyAgenda"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agenda/today": {
+      "get": {
+        "operationId": "getTodayAgenda",
+        "summary": "Get today's agenda",
+        "description": "Use for questions like what do I have today, what's my day, and what should I do today. The backend resolves today in the user's configured timezone.",
+        "responses": {
+          "200": {
+            "description": "Today's agenda",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DailyAgenda"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agenda/tomorrow": {
+      "get": {
+        "operationId": "getTomorrowAgenda",
+        "summary": "Get tomorrow's agenda",
+        "description": "Use for questions like what do I have tomorrow and what should I do tomorrow. The backend resolves tomorrow in the user's configured timezone.",
+        "responses": {
+          "200": {
+            "description": "Tomorrow's agenda",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DailyAgenda"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/briefings/morning": {
+      "get": {
+        "operationId": "getMorningBriefing",
+        "summary": "Get morning briefing",
+        "description": "Use for concise start-of-day coaching.",
+        "responses": {
+          "200": {
+            "description": "Morning briefing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefingResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/briefings/evening": {
+      "get": {
+        "operationId": "getEveningBriefing",
+        "summary": "Get evening briefing",
+        "description": "Use for concise end-of-day wrap-up coaching.",
+        "responses": {
+          "200": {
+            "description": "Evening briefing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefingResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/briefings/tomorrow": {
+      "get": {
+        "operationId": "getTomorrowBriefing",
+        "summary": "Get tomorrow briefing",
+        "description": "Use for concise tomorrow-prep coaching.",
+        "responses": {
+          "200": {
+            "description": "Tomorrow briefing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefingResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/settings": {
+      "get": {
+        "operationId": "getSettings",
+        "summary": "Get settings",
+        "responses": {
+          "200": {
+            "description": "Current settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserSettings"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateSettings",
+        "summary": "Update settings",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserSettingsUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserSettings"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/google-calendar/setup-status": {
+      "get": {
+        "operationId": "getGoogleCalendarSetupStatus",
+        "summary": "Get Google Calendar setup status",
+        "responses": {
+          "200": {
+            "description": "Google Calendar setup status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleCalendarSetupStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/google-calendar/connect-info": {
+      "get": {
+        "operationId": "getGoogleCalendarConnectInfo",
+        "summary": "Get exact Google Calendar connect URL",
+        "description": "Use when the user explicitly wants to connect Google Calendar. Print the returned connect_url exactly with no edits.",
+        "responses": {
+          "200": {
+            "description": "Connect info",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleCalendarConnectInfo"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/google-calendar/status": {
+      "get": {
+        "operationId": "getGoogleCalendarStatus",
+        "summary": "Get Google Calendar connection status",
+        "description": "Use when the user asks whether Google Calendar is connected.",
+        "responses": {
+          "200": {
+            "description": "Google Calendar status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleCalendarAuthStatus"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "disconnectGoogleCalendar",
+        "summary": "Disconnect Google Calendar",
+        "responses": {
+          "200": {
+            "description": "Disconnected status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleCalendarAuthStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/google-calendar/test": {
+      "get": {
+        "operationId": "testGoogleCalendarConnection",
+        "summary": "Test Google Calendar connection",
+        "description": "Use when the user asks whether Google Calendar is working right now.",
+        "responses": {
+          "200": {
+            "description": "Google Calendar test result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleCalendarAuthStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/google-calendar/create-and-sync/event": {
+      "post": {
+        "operationId": "createAndSyncEvent",
+        "summary": "Create local event and sync to Google Calendar",
+        "description": "Use only when the user explicitly asks to put an event on Google Calendar.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created and synced event",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleCalendarEventSyncResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/google-calendar/create-and-sync/reminder": {
+      "post": {
+        "operationId": "createAndSyncReminder",
+        "summary": "Create local reminder and sync to Google Calendar",
+        "description": "Use only when the user explicitly asks to put a reminder on Google Calendar.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReminderCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created and synced reminder",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleCalendarReminderSyncResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/integrations/google-calendar/create-and-sync/task": {
+      "post": {
+        "operationId": "createAndSyncTask",
+        "summary": "Create local task and sync to Google Calendar",
+        "description": "Use only when the user explicitly asks to put a task on Google Calendar.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Created and synced task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleCalendarTaskSyncResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AssistantCommandRequest": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "now": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": ["text"]
+      },
+      "AssistantCommandResponse": {
+        "type": "object",
+        "properties": {
+          "action": { "type": "string" },
+          "message": { "type": "string" },
+          "created_type": { "type": ["string", "null"] },
+          "created_id": { "type": ["string", "null"] },
+          "data": { "type": ["object", "null"], "additionalProperties": true }
+        },
+        "required": ["action", "message"]
+      },
+      "UndoActionResult": {
+        "type": "object",
+        "properties": {
+          "undone": { "type": "boolean" },
+          "action_type": { "type": ["string", "null"] },
+          "entity_type": { "type": ["string", "null"] },
+          "entity_id": { "type": ["string", "null"] },
+          "message": { "type": "string" },
+          "data": { "type": ["object", "null"], "additionalProperties": true }
+        },
+        "required": ["undone", "message"]
+      },
+      "TaskLite": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "details": { "type": "string" },
+          "due_at": { "type": ["string", "null"], "format": "date-time" },
+          "priority": { "type": "string" },
+          "status": { "type": "string" }
+        }
+      },
+      "BillLite": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "amount": { "type": "number" },
+          "currency": { "type": "string" },
+          "due_at": { "type": "string", "format": "date-time" },
+          "status": { "type": "string" }
+        }
+      },
+      "ReminderLite": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "remind_at": { "type": "string", "format": "date-time" },
+          "status": { "type": "string" },
+          "notes": { "type": "string" }
+        }
+      },
+      "EventLite": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "starts_at": { "type": "string", "format": "date-time" },
+          "ends_at": { "type": ["string", "null"], "format": "date-time" },
+          "location": { "type": "string" },
+          "notes": { "type": "string" },
+          "status": { "type": "string" }
+        }
+      },
+      "AssistantSummary": {
+        "type": "object",
+        "properties": {
+          "generated_at": { "type": "string", "format": "date-time" },
+          "overdue_tasks": { "type": "array", "items": { "$ref": "#/components/schemas/TaskLite" } },
+          "due_tasks_today": { "type": "array", "items": { "$ref": "#/components/schemas/TaskLite" } },
+          "due_bills_this_week": { "type": "array", "items": { "$ref": "#/components/schemas/BillLite" } },
+          "overdue_bills": { "type": "array", "items": { "$ref": "#/components/schemas/BillLite" } },
+          "due_reminders": { "type": "array", "items": { "$ref": "#/components/schemas/ReminderLite" } },
+          "upcoming_events": { "type": "array", "items": { "$ref": "#/components/schemas/EventLite" } },
+          "priority_tasks": { "type": "array", "items": { "$ref": "#/components/schemas/TaskLite" } },
+          "best_next_action": { "type": ["string", "null"] }
+        },
+        "required": ["generated_at"]
+      },
+      "DailyAgenda": {
+        "type": "object",
+        "properties": {
+          "date": { "type": "string" },
+          "tasks": { "type": "array", "items": { "$ref": "#/components/schemas/TaskLite" } },
+          "bills": { "type": "array", "items": { "$ref": "#/components/schemas/BillLite" } },
+          "reminders": { "type": "array", "items": { "$ref": "#/components/schemas/ReminderLite" } },
+          "events": { "type": "array", "items": { "$ref": "#/components/schemas/EventLite" } },
+          "priority_tasks": { "type": "array", "items": { "$ref": "#/components/schemas/TaskLite" } },
+          "conflicts": { "type": "array", "items": { "type": "string" } },
+          "suggested_plan": { "type": "array", "items": { "type": "string" } },
+          "best_next_action": { "type": ["string", "null"] }
+        },
+        "required": ["date"]
+      },
+      "BriefingResponse": {
+        "type": "object",
+        "properties": {
+          "kind": { "type": "string" },
+          "date": { "type": "string" },
+          "overview": { "type": "array", "items": { "type": "string" } },
+          "warnings": { "type": "array", "items": { "type": "string" } },
+          "next_steps": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["kind", "date"]
+      },
+      "UserSettings": {
+        "type": "object",
+        "properties": {
+          "full_name": { "type": ["string", "null"] },
+          "gmail_address": { "type": ["string", "null"] },
+          "google_calendar_id": { "type": ["string", "null"] },
+          "timezone": { "type": "string" },
+          "workday_start_hour": { "type": "integer" },
+          "workday_end_hour": { "type": "integer" },
+          "preferred_reminder_lead_minutes": { "type": "integer" },
+          "default_task_priority": { "type": "string" },
+          "home_location": { "type": ["string", "null"] },
+          "work_location": { "type": ["string", "null"] },
+          "google_calendar_offer_seen": { "type": "boolean" },
+          "google_calendar_offer_declined": { "type": "boolean" },
+          "google_calendar_connected_profile_key": { "type": ["string", "null"] }
+        }
+      },
+      "UserSettingsUpdate": {
+        "type": "object",
+        "properties": {
+          "full_name": { "type": ["string", "null"] },
+          "gmail_address": { "type": ["string", "null"] },
+          "google_calendar_id": { "type": ["string", "null"] },
+          "timezone": { "type": ["string", "null"] },
+          "workday_start_hour": { "type": ["integer", "null"] },
+          "workday_end_hour": { "type": ["integer", "null"] },
+          "preferred_reminder_lead_minutes": { "type": ["integer", "null"] },
+          "default_task_priority": { "type": ["string", "null"] },
+          "home_location": { "type": ["string", "null"] },
+          "work_location": { "type": ["string", "null"] },
+          "google_calendar_offer_seen": { "type": ["boolean", "null"] },
+          "google_calendar_offer_declined": { "type": ["boolean", "null"] },
+          "google_calendar_connected_profile_key": { "type": ["string", "null"] }
+        }
+      },
+      "GoogleCalendarSetupStatus": {
+        "type": "object",
+        "properties": {
+          "connected": { "type": "boolean" },
+          "profile_key": { "type": "string" },
+          "gmail_address": { "type": ["string", "null"] },
+          "calendar_id": { "type": "string" },
+          "should_offer_setup": { "type": "boolean" },
+          "offer_seen": { "type": "boolean" },
+          "offer_declined": { "type": "boolean" },
+          "message": { "type": "string" }
+        },
+        "required": ["connected", "profile_key", "calendar_id", "should_offer_setup", "offer_seen", "offer_declined", "message"]
+      },
+      "GoogleCalendarConnectInfo": {
+        "type": "object",
+        "properties": {
+          "connect_url": { "type": "string" },
+          "message": { "type": "string" }
+        },
+        "required": ["connect_url", "message"]
+      },
+      "GoogleCalendarAuthStatus": {
+        "type": "object",
+        "properties": {
+          "connected": { "type": "boolean" },
+          "calendar_id": { "type": "string" },
+          "gmail_address": { "type": ["string", "null"] },
+          "redirect_uri": { "type": ["string", "null"] },
+          "has_refresh_token": { "type": "boolean" },
+          "profile_key": { "type": "string" }
+        },
+        "required": ["connected", "calendar_id", "has_refresh_token", "profile_key"]
+      },
+      "EventCreate": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "starts_at": { "type": "string", "format": "date-time" },
+          "ends_at": { "type": ["string", "null"], "format": "date-time" },
+          "location": { "type": "string" },
+          "notes": { "type": "string" }
+        },
+        "required": ["title", "starts_at"]
+      },
+      "ReminderCreate": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "remind_at": { "type": "string", "format": "date-time" },
+          "channel": { "type": "string" },
+          "related_type": { "type": ["string", "null"] },
+          "related_id": { "type": ["string", "null"] },
+          "notes": { "type": "string" }
+        },
+        "required": ["title", "remind_at"]
+      },
+      "TaskCreate": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "details": { "type": "string" },
+          "due_at": { "type": ["string", "null"], "format": "date-time" },
+          "priority": { "type": "string" }
+        },
+        "required": ["title"]
+      },
+      "GoogleCalendarEventSyncResponse": {
+        "type": "object",
+        "properties": {
+          "local_event": { "$ref": "#/components/schemas/EventLite" },
+          "calendar": { "$ref": "#/components/schemas/GoogleCalendarEventResult" }
+        }
+      },
+      "GoogleCalendarReminderSyncResponse": {
+        "type": "object",
+        "properties": {
+          "local_reminder": { "$ref": "#/components/schemas/ReminderLite" },
+          "calendar": { "$ref": "#/components/schemas/GoogleCalendarEventResult" }
+        }
+      },
+      "GoogleCalendarTaskSyncResponse": {
+        "type": "object",
+        "properties": {
+          "local_task": { "$ref": "#/components/schemas/TaskLite" },
+          "calendar": { "$ref": "#/components/schemas/GoogleCalendarEventResult" }
+        }
+      },
+      "GoogleCalendarEventResult": {
+        "type": "object",
+        "properties": {
+          "calendar_id": { "type": "string" },
+          "google_event_id": { "type": "string" },
+          "html_link": { "type": "string" },
+          "status": { "type": "string" }
+        }
+      }
+    }
+  }
+}

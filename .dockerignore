@@ -1,0 +1,13 @@
+.venv
+__pycache__
+*.pyc
+.git
+.gitignore
+cloudflared-temp.err.log
+cloudflared-temp.out.log
+assistant.local.env.ps1
+data/google_tokens
+data/google_oauth_states
+data/google_calendar_connections.json
+data/service_state.json
+docs
