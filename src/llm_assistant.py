@@ -27,6 +27,7 @@ from src.nlp import (
     _clean_title_after_date,
     _extract_agenda_target,
     _normalize_entity_title,
+    _match_text,
     _extract_recurrence,
     _extract_task_priority,
     _parse_datetime_phrase,
@@ -36,8 +37,16 @@ from src.nlp import (
 from src.service import AssistantService
 
 
-YES_TOKENS = {"yes", "yeah", "yep", "sure", "do it", "go ahead", "confirm", "yes please"}
-NO_TOKENS = {"no", "nope", "cancel", "never mind", "stop", "don't", "do not"}
+YES_TOKENS = {
+    "yes", "yeah", "yep", "sure", "do it", "go ahead", "confirm", "yes please",
+    "si", "claro", "dale", "vale", "hazlo",
+    "sim", "claro que sim", "pode", "pode sim", "faz isso",
+}
+NO_TOKENS = {
+    "no", "nope", "cancel", "never mind", "stop", "don't", "do not",
+    "cancela", "para", "no hagas eso",
+    "nao", "não", "cancela", "pare", "deixa pra la",
+}
 
 
 class LlmAssistantPlan(BaseModel):
@@ -102,6 +111,8 @@ Rules:
 - Do not ask numbered multiple-choice questions.
 - Do not ask the user to choose from options the backend cannot execute yet.
 - Prefer a single direct clarification question that can be answered with a short phrase or yes/no.
+- The user may write in English, Spanish, or Portuguese. Understand all three.
+- Keep extracted titles in the user's original language when possible.
 
 Available tool actions:
 - create_task
@@ -229,9 +240,9 @@ def _resolve_single_match(matches: list, entity_name: str, label_field: str) -> 
 
 
 def _is_google_calendar_creation_request(text: str) -> bool:
-    lowered = text.lower()
-    has_google_calendar = "google calendar" in lowered
-    has_create_intent = any(token in lowered for token in ["add", "put", "schedule", "create"])
+    lowered = _match_text(text)
+    has_google_calendar = any(token in lowered for token in ["google calendar", "google calendario"])
+    has_create_intent = any(token in lowered for token in ["add", "put", "schedule", "create", "agrega", "agregar", "programa", "crear", "adiciona", "adicionar", "agenda", "cria"])
     return has_google_calendar and has_create_intent
 
 
@@ -257,9 +268,18 @@ def _normalize_google_calendar_event_title(text: str) -> str:
         "add on my google calendar",
         "schedule on my google calendar",
         "schedule in my google calendar",
+        "agrega a mi google calendar",
+        "agregar a mi google calendar",
+        "pon en mi google calendar",
+        "programa en mi google calendar",
+        "adiciona no meu google calendar",
+        "adicionar no meu google calendar",
+        "coloca no meu google calendar",
+        "agenda no meu google calendar",
+        "cria no meu google calendar",
         ],
     )
-    title = re.sub(r"^(add|put|schedule|create)\s+", "", title, flags=re.IGNORECASE)
+    title = re.sub(r"^(add|put|schedule|create|agrega|agregar|anade|poner|programa|crear|adiciona|adicionar|coloca|agenda|cria)\s+", "", title, flags=re.IGNORECASE)
     return title or "Event"
 
 
@@ -796,7 +816,7 @@ def handle_command_with_llm(
         return enriched
 
     normalized = " ".join(request.text.strip().split())
-    lowered = normalized.lower()
+    lowered = _match_text(normalized)
     pending = service.get_pending_confirmation()
 
     if "clear" in lowered and "calendar" in lowered and "google" not in lowered:

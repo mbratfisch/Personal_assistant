@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from datetime import datetime, time, timedelta
 
 from dateutil import parser as date_parser
@@ -30,36 +31,74 @@ def _normalize_text(text: str) -> str:
     return " ".join(text.strip().split())
 
 
+def _match_text(text: str) -> str:
+    collapsed = _normalize_text(text).lower()
+    normalized = unicodedata.normalize("NFKD", collapsed)
+    return "".join(char for char in normalized if not unicodedata.combining(char))
+
+
 def _extract_recurrence(text: str) -> tuple[RecurrenceFrequency | None, int]:
-    lowered = text.lower()
+    lowered = _match_text(text)
     for frequency in RecurrenceFrequency:
         if frequency.value in lowered:
             return frequency, 1
     if "every day" in lowered or "daily" in lowered:
         return RecurrenceFrequency.daily, 1
+    if "todos los dias" in lowered or "cada dia" in lowered or "todos os dias" in lowered:
+        return RecurrenceFrequency.daily, 1
     if "every week" in lowered or "weekly" in lowered:
+        return RecurrenceFrequency.weekly, 1
+    if "todas las semanas" in lowered or "cada semana" in lowered or "toda semana" in lowered:
         return RecurrenceFrequency.weekly, 1
     if "every month" in lowered or "monthly" in lowered:
         return RecurrenceFrequency.monthly, 1
+    if "todos los meses" in lowered or "cada mes" in lowered or "todo mes" in lowered:
+        return RecurrenceFrequency.monthly, 1
     if "every year" in lowered or "yearly" in lowered:
+        return RecurrenceFrequency.yearly, 1
+    if "todos los anos" in lowered or "cada ano" in lowered:
         return RecurrenceFrequency.yearly, 1
     return None, 1
 
 
 def _parse_datetime_phrase(text: str, now: datetime) -> datetime | None:
-    lowered = text.lower()
-    weekday_names = [
-        "monday",
-        "tuesday",
-        "wednesday",
-        "thursday",
-        "friday",
-        "saturday",
-        "sunday",
-    ]
+    lowered = _match_text(text)
+    weekday_aliases = {
+        "monday": 0,
+        "lunes": 0,
+        "segunda": 0,
+        "segunda-feira": 0,
+        "segunda feira": 0,
+        "tuesday": 1,
+        "martes": 1,
+        "terca": 1,
+        "terca-feira": 1,
+        "terca feira": 1,
+        "wednesday": 2,
+        "miercoles": 2,
+        "quarta": 2,
+        "quarta-feira": 2,
+        "quarta feira": 2,
+        "thursday": 3,
+        "jueves": 3,
+        "quinta": 3,
+        "quinta-feira": 3,
+        "quinta feira": 3,
+        "friday": 4,
+        "viernes": 4,
+        "sexta": 4,
+        "sexta-feira": 4,
+        "sexta feira": 4,
+        "saturday": 5,
+        "sabado": 5,
+        "sábado": 5,
+        "sabado": 5,
+        "domingo": 6,
+        "sunday": 6,
+    }
 
     def parse_time_fragment(source: str) -> tuple[int, int] | None:
-        time_match = re.search(r"at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", source)
+        time_match = re.search(r"(?:\bat\b|\ba\s+las\b|\ba\s+la\b|\bas\b)\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", source)
         if not time_match:
             return None
         hour = int(time_match.group(1))
@@ -71,29 +110,29 @@ def _parse_datetime_phrase(text: str, now: datetime) -> datetime | None:
             hour = 0
         return hour, minute
 
-    if "tomorrow" in lowered:
+    if "tomorrow" in lowered or "manana" in lowered or "amanha" in lowered:
         base = now + timedelta(days=1)
         parsed_time = parse_time_fragment(lowered)
         if parsed_time:
             return datetime.combine(base.date(), time(hour=parsed_time[0], minute=parsed_time[1]))
         return datetime.combine(base.date(), time(hour=9, minute=0))
-    if "tonight" in lowered:
+    if "tonight" in lowered or "esta noche" in lowered or "esta noite" in lowered:
         parsed_time = parse_time_fragment(lowered) or (19, 0)
         return datetime.combine(now.date(), time(hour=parsed_time[0], minute=parsed_time[1]))
-    if "this evening" in lowered:
+    if "this evening" in lowered or "esta tarde" in lowered:
         parsed_time = parse_time_fragment(lowered) or (18, 0)
         return datetime.combine(now.date(), time(hour=parsed_time[0], minute=parsed_time[1]))
-    if "this afternoon" in lowered:
+    if "this afternoon" in lowered or "hoy por la tarde" in lowered or "hoje a tarde" in lowered:
         parsed_time = parse_time_fragment(lowered) or (15, 0)
         return datetime.combine(now.date(), time(hour=parsed_time[0], minute=parsed_time[1]))
-    if "this morning" in lowered:
+    if "this morning" in lowered or "esta manana" in lowered or "hoy por la manana" in lowered or "hoje de manha" in lowered:
         parsed_time = parse_time_fragment(lowered) or (9, 0)
         return datetime.combine(now.date(), time(hour=parsed_time[0], minute=parsed_time[1]))
-    if "today" in lowered:
+    if "today" in lowered or "hoy" in lowered or "hoje" in lowered:
         parsed_time = parse_time_fragment(lowered)
         if parsed_time:
             return datetime.combine(now.date(), time(hour=parsed_time[0], minute=parsed_time[1]))
-    for index, weekday in enumerate(weekday_names):
+    for weekday, index in weekday_aliases.items():
         if weekday in lowered:
             days_ahead = (index - now.weekday()) % 7
             if days_ahead == 0:
@@ -171,21 +210,33 @@ def _normalize_entity_title(text: str, prefixes: list[str] | None = None, *, dro
 
 
 def _extract_agenda_target(text: str, now: datetime) -> datetime | None:
-    lowered = text.lower()
-    if "tomorrow" in lowered:
+    lowered = _match_text(text)
+    if "tomorrow" in lowered or "manana" in lowered or "amanha" in lowered:
         return now + timedelta(days=1)
-    if "today" in lowered:
+    if "today" in lowered or "hoy" in lowered or "hoje" in lowered:
         return now
-    weekday_names = [
-        "monday",
-        "tuesday",
-        "wednesday",
-        "thursday",
-        "friday",
-        "saturday",
-        "sunday",
-    ]
-    for index, weekday in enumerate(weekday_names):
+    weekday_aliases = {
+        "monday": 0,
+        "lunes": 0,
+        "segunda": 0,
+        "tuesday": 1,
+        "martes": 1,
+        "terca": 1,
+        "wednesday": 2,
+        "miercoles": 2,
+        "quarta": 2,
+        "thursday": 3,
+        "jueves": 3,
+        "quinta": 3,
+        "friday": 4,
+        "viernes": 4,
+        "sexta": 4,
+        "saturday": 5,
+        "sabado": 5,
+        "sunday": 6,
+        "domingo": 6,
+    }
+    for weekday, index in weekday_aliases.items():
         if weekday in lowered:
             days_ahead = (index - now.weekday()) % 7
             if days_ahead == 0:
@@ -196,8 +247,8 @@ def _extract_agenda_target(text: str, now: datetime) -> datetime | None:
 
 
 def _is_google_calendar_clear_command(text: str) -> bool:
-    lowered = text.lower()
-    has_calendar_target = "google calendar" in lowered or "calendar" in lowered
+    lowered = _match_text(text)
+    has_calendar_target = any(phrase in lowered for phrase in ["google calendar", "calendario", "agenda"])
     has_clear_verb = any(
         phrase in lowered
         for phrase in [
@@ -207,6 +258,11 @@ def _is_google_calendar_clear_command(text: str) -> bool:
             "delete all",
             "cancel all",
             "wipe",
+            "limpiar",
+            "vaciar",
+            "borrar todo",
+            "cancelar todo",
+            "limpar",
         ]
     )
     has_event_hint = any(
@@ -217,18 +273,46 @@ def _is_google_calendar_clear_command(text: str) -> bool:
             "meetings",
             "schedule",
             "calendar",
+            "eventos",
+            "citas",
+            "reuniones",
+            "agenda",
+            "calendario",
         ]
     )
     return has_calendar_target and has_clear_verb and has_event_hint
 
 
 def _is_google_calendar_create_command(text: str) -> bool:
-    lowered = text.lower()
-    has_google_calendar = "google calendar" in lowered
-    has_create_verb = any(phrase in lowered for phrase in ["add", "put", "schedule", "create"])
+    lowered = _match_text(text)
+    has_google_calendar = any(phrase in lowered for phrase in ["google calendar", "google calendario"])
+    has_create_verb = any(phrase in lowered for phrase in ["add", "put", "schedule", "create", "agrega", "agregar", "anade", "poner", "programa", "crear", "adiciona", "adicionar", "coloca", "agendar", "criar"])
     has_time_hint = any(
         phrase in lowered
         for phrase in ["today", "tomorrow", "tonight", " at ", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+    )
+    has_time_hint = has_time_hint or any(
+        phrase in lowered
+        for phrase in [
+            "hoy",
+            "hoje",
+            "manana",
+            "amanha",
+            "esta noche",
+            "esta noite",
+            "lunes",
+            "martes",
+            "miercoles",
+            "jueves",
+            "viernes",
+            "sabado",
+            "domingo",
+            "segunda",
+            "terca",
+            "quarta",
+            "quinta",
+            "sexta",
+        ]
     )
     return has_google_calendar and has_create_verb and has_time_hint
 
@@ -247,15 +331,24 @@ def _normalize_google_calendar_event_title(text: str) -> str:
         "schedule on my google calendar",
         "schedule in my google calendar",
         "create in my google calendar",
+        "agrega a mi google calendar",
+        "agregar a mi google calendar",
+        "pon en mi google calendar",
+        "programa en mi google calendar",
+        "adiciona no meu google calendar",
+        "adicionar no meu google calendar",
+        "coloca no meu google calendar",
+        "agenda no meu google calendar",
+        "cria no meu google calendar",
         ],
     )
-    title = re.sub(r"^(add|put|schedule|create)\s+", "", title, flags=re.IGNORECASE)
+    title = re.sub(r"^(add|put|schedule|create|agrega|agregar|anade|poner|programa|crear|adiciona|adicionar|coloca|agenda|cria)\s+", "", title, flags=re.IGNORECASE)
     return title or "Event"
 
 
 def _is_ambiguous_calendar_clear_command(text: str) -> bool:
-    lowered = text.lower()
-    has_calendar_target = "calendar" in lowered or "schedule" in lowered
+    lowered = _match_text(text)
+    has_calendar_target = any(phrase in lowered for phrase in ["calendar", "schedule", "calendario", "agenda"])
     has_google = "google calendar" in lowered
     has_clear_verb = any(
         phrase in lowered
@@ -266,14 +359,19 @@ def _is_ambiguous_calendar_clear_command(text: str) -> bool:
             "delete all",
             "cancel all",
             "wipe",
+            "limpiar",
+            "vaciar",
+            "borrar todo",
+            "cancelar todo",
+            "limpar",
         ]
     )
     return has_calendar_target and has_clear_verb and not has_google
 
 
 def _is_shopping_clear_command(text: str) -> bool:
-    lowered = text.lower()
-    has_shopping_target = "shopping list" in lowered or "grocery list" in lowered
+    lowered = _match_text(text)
+    has_shopping_target = any(phrase in lowered for phrase in ["shopping list", "grocery list", "lista de compras", "lista de supermercado"])
     has_clear_verb = any(
         phrase in lowered
         for phrase in [
@@ -282,6 +380,10 @@ def _is_shopping_clear_command(text: str) -> bool:
             "remove all",
             "delete all",
             "wipe",
+            "limpiar",
+            "vaciar",
+            "borrar todo",
+            "limpar",
         ]
     )
     return has_shopping_target and has_clear_verb
@@ -293,12 +395,12 @@ def _extract_after_keyword(text: str, keyword: str) -> str | None:
 
 
 def _extract_task_priority(text: str, default_priority: str) -> str:
-    lowered = text.lower()
-    if "high priority" in lowered or "urgent" in lowered:
+    lowered = _match_text(text)
+    if "high priority" in lowered or "urgent" in lowered or "alta prioridad" in lowered or "alta prioridade" in lowered:
         return "high"
-    if "low priority" in lowered:
+    if "low priority" in lowered or "baja prioridad" in lowered or "baixa prioridade" in lowered:
         return "low"
-    if "medium priority" in lowered:
+    if "medium priority" in lowered or "media prioridad" in lowered or "media prioridade" in lowered:
         return "medium"
     return default_priority
 
@@ -327,7 +429,7 @@ def _resolve_match(
 
 
 def _looks_actionable_but_ambiguous(text: str) -> bool:
-    lowered = text.lower()
+    lowered = _match_text(text)
     signals = [
         "remember",
         "save",
@@ -341,16 +443,28 @@ def _looks_actionable_but_ambiguous(text: str) -> bool:
         "to do",
         "need to",
         "later",
+        "recuerda",
+        "guardar",
+        "agregar",
+        "anadir",
+        "programar",
+        "comprar",
+        "necesito",
+        "lembra",
+        "salvar",
+        "adicionar",
+        "agendar",
+        "preciso",
     ]
     return any(signal in lowered for signal in signals)
 
 
 def handle_command(request: AssistantCommandRequest, service: AssistantService) -> AssistantCommandResponse:
     text = _normalize_text(request.text)
-    lowered = text.lower()
+    lowered = _match_text(text)
     now = request.now or service.current_time(service.get_settings())
 
-    if lowered in {"undo", "undo that", "undo last action", "revert that", "never mind"}:
+    if lowered in {"undo", "undo that", "undo last action", "revert that", "never mind", "deshacer", "deshaz eso", "desfazer", "desfaz isso"}:
         result = service.undo_last_action()
         return AssistantCommandResponse(
             action="undo",
@@ -360,8 +474,20 @@ def handle_command(request: AssistantCommandRequest, service: AssistantService) 
             data=result.data,
         )
 
-    if lowered.startswith("save a note") or lowered.startswith("note:") or lowered.startswith("save note") or lowered.startswith("remember that"):
-        content = re.sub(r"^(save a note|save note|note:)\s*:?\s*", "", text, flags=re.IGNORECASE)
+    if (
+        lowered.startswith("save a note")
+        or lowered.startswith("note:")
+        or lowered.startswith("save note")
+        or lowered.startswith("remember that")
+        or lowered.startswith("guarda una nota")
+        or lowered.startswith("guardar nota")
+        or lowered.startswith("nota:")
+        or lowered.startswith("recuerda que")
+        or lowered.startswith("salva uma nota")
+        or lowered.startswith("salvar nota")
+        or lowered.startswith("lembra que")
+    ):
+        content = re.sub(r"^(save a note|save note|note:|guarda una nota|guardar nota|nota:|recuerda que|salva uma nota|salvar nota|lembra que)\s*:?\s*", "", text, flags=re.IGNORECASE)
         title = content.split(".")[0][:60] or "Quick note"
         note = service.create_note(NoteCreate(title=title, content=content))
         return AssistantCommandResponse(
@@ -412,6 +538,27 @@ def handle_command(request: AssistantCommandRequest, service: AssistantService) 
             "what is the best next action",
             "best next action",
             "plan my day",
+            "que tengo hoy",
+            "que tengo manana",
+            "mi agenda",
+            "agenda para hoy",
+            "agenda para manana",
+            "calendario para hoy",
+            "calendario para manana",
+            "revisa mi calendario",
+            "que hay en mi calendario",
+            "planea mi dia",
+            "o que tenho hoje",
+            "o que tenho amanha",
+            "minha agenda",
+            "agenda para hoje",
+            "agenda para amanha",
+            "calendario para hoje",
+            "calendario para amanha",
+            "verifica meu calendario",
+            "checa meu calendario",
+            "o que tem no meu calendario",
+            "planeja meu dia",
         ]
     ):
         target = _extract_agenda_target(text, now)
@@ -423,7 +570,7 @@ def handle_command(request: AssistantCommandRequest, service: AssistantService) 
                 data=agenda.model_dump(mode="json"),
             )
 
-    if any(token in lowered for token in ["morning briefing", "brief me for today", "daily briefing", "start my day"]):
+    if any(token in lowered for token in ["morning briefing", "brief me for today", "daily briefing", "start my day", "resumen de la manana", "resumo da manha", "comeca meu dia", "empieza mi dia"]):
         briefing = service.get_morning_briefing(now=now)
         return AssistantCommandResponse(
             action="morning_briefing",
@@ -431,7 +578,7 @@ def handle_command(request: AssistantCommandRequest, service: AssistantService) 
             data=briefing.model_dump(mode="json"),
         )
 
-    if any(token in lowered for token in ["evening briefing", "wrap up my day", "end of day", "evening wrap up"]):
+    if any(token in lowered for token in ["evening briefing", "wrap up my day", "end of day", "evening wrap up", "resumen de la noche", "resumo da noite", "fim do dia", "fin del dia"]):
         briefing = service.get_evening_briefing(now=now)
         return AssistantCommandResponse(
             action="evening_briefing",
@@ -439,7 +586,7 @@ def handle_command(request: AssistantCommandRequest, service: AssistantService) 
             data=briefing.model_dump(mode="json"),
         )
 
-    if any(token in lowered for token in ["what do i need tomorrow", "prep tomorrow", "prepare tomorrow", "tomorrow briefing"]):
+    if any(token in lowered for token in ["what do i need tomorrow", "prep tomorrow", "prepare tomorrow", "tomorrow briefing", "que necesito manana", "preparame para manana", "o que eu preciso amanha", "me prepara para amanha"]):
         briefing = service.get_tomorrow_briefing(now=now)
         return AssistantCommandResponse(
             action="tomorrow_briefing",
@@ -447,7 +594,7 @@ def handle_command(request: AssistantCommandRequest, service: AssistantService) 
             data=briefing.model_dump(mode="json"),
         )
 
-    if any(token in lowered for token in ["summary", "what's due", "whats due", "what is due", "overview"]):
+    if any(token in lowered for token in ["summary", "what's due", "whats due", "what is due", "overview", "resumen", "sumario", "resumo", "visao geral", "vision general"]):
         summary = service.get_summary(now=now)
         return AssistantCommandResponse(
             action="summary",
@@ -652,11 +799,11 @@ def handle_command(request: AssistantCommandRequest, service: AssistantService) 
             data=updated.model_dump(mode="json"),
         )
 
-    if lowered.startswith("remind me"):
+    if lowered.startswith("remind me") or lowered.startswith("recuerdame") or lowered.startswith("recordame") or lowered.startswith("lembra me") or lowered.startswith("lembre me"):
         recurrence, interval = _extract_recurrence(lowered)
         remind_at = _parse_datetime_phrase(text, now)
         subject = _normalize_entity_title(
-            re.sub(r"^remind me\s*", "", text, flags=re.IGNORECASE),
+            re.sub(r"^(remind me|recuerdame|recordame|lembra me|lembre me)\s*", "", text, flags=re.IGNORECASE),
             drop_leading_to=True,
         ) or "Reminder"
         reminder = service.create_reminder(
@@ -741,13 +888,31 @@ def handle_command(request: AssistantCommandRequest, service: AssistantService) 
             data=updated.model_dump(mode="json"),
         )
 
-    if lowered.startswith("add task") or lowered.startswith("create task") or lowered.startswith("task:") or lowered.startswith("i need to") or lowered.startswith("todo:") or lowered.startswith("to do:"):
+    if (
+        lowered.startswith("add task")
+        or lowered.startswith("create task")
+        or lowered.startswith("task:")
+        or lowered.startswith("i need to")
+        or lowered.startswith("todo:")
+        or lowered.startswith("to do:")
+        or lowered.startswith("agrega tarea")
+        or lowered.startswith("agregar tarea")
+        or lowered.startswith("crear tarea")
+        or lowered.startswith("tarea:")
+        or lowered.startswith("necesito")
+        or lowered.startswith("adiciona tarefa")
+        or lowered.startswith("adicionar tarefa")
+        or lowered.startswith("criar tarefa")
+        or lowered.startswith("tarefa:")
+        or lowered.startswith("preciso")
+        or lowered.startswith("tenho que")
+    ):
         settings = service.get_settings()
         recurrence, interval = _extract_recurrence(lowered)
         due_at = _parse_datetime_phrase(text, now)
         priority = _extract_task_priority(text, settings.default_task_priority)
         title = _normalize_entity_title(
-            re.sub(r"^(add task|create task|task:|i need to|todo:|to do:)\s*:?\s*", "", text, flags=re.IGNORECASE),
+            re.sub(r"^(add task|create task|task:|i need to|todo:|to do:|agrega tarea|agregar tarea|crear tarea|tarea:|necesito|adiciona tarefa|adicionar tarefa|criar tarefa|tarefa:|preciso|tenho que)\s*:?\s*", "", text, flags=re.IGNORECASE),
             drop_leading_to=True,
         ) or "Task"
         task = service.create_task(
@@ -918,13 +1083,25 @@ def handle_command(request: AssistantCommandRequest, service: AssistantService) 
                 data=updated.model_dump(mode="json"),
             )
 
-    if lowered.startswith("schedule") or lowered.startswith("create event") or lowered.startswith("meeting with") or lowered.startswith("book"):
+    if (
+        lowered.startswith("schedule")
+        or lowered.startswith("create event")
+        or lowered.startswith("meeting with")
+        or lowered.startswith("book")
+        or lowered.startswith("programa")
+        or lowered.startswith("crear evento")
+        or lowered.startswith("reunion con")
+        or lowered.startswith("agenda")
+        or lowered.startswith("criar evento")
+        or lowered.startswith("reuniao com")
+        or lowered.startswith("marcar")
+    ):
         starts_at = _parse_datetime_phrase(text, now) or (now + timedelta(days=1))
-        if lowered.startswith("meeting with"):
+        if lowered.startswith("meeting with") or lowered.startswith("reunion con") or lowered.startswith("reuniao com"):
             title = _normalize_entity_title(text) or "Meeting"
         else:
             title = _normalize_entity_title(
-                re.sub(r"^(schedule|create event|book)\s*", "", text, flags=re.IGNORECASE),
+                re.sub(r"^(schedule|create event|book|programa|crear evento|agenda|criar evento|marcar)\s*", "", text, flags=re.IGNORECASE),
             ) or "Event"
         event = service.create_event(EventCreate(title=title.capitalize(), starts_at=starts_at))
         return AssistantCommandResponse(
