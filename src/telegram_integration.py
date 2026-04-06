@@ -297,6 +297,7 @@ def _link_telegram_chat(chat: dict[str, Any], user: dict[str, Any], code: str) -
         "telegram_first_name": chat.get("first_name"),
         "linked_at": _iso(now),
         "last_message_at": _iso(now),
+        "recent_history": [],
     }
     chats[chat_id] = entry
     users[user_id] = entry
@@ -483,11 +484,23 @@ def handle_telegram_update(update: dict[str, Any]) -> dict[str, Any]:
         return {"ok": True, "status": "not_linked"}
 
     linked["last_message_at"] = _iso(_utcnow())
+    history = list(linked.get("recent_history") or [])
     chats[chat_key] = linked
     users[linked["user_id"]] = linked
     _save_registry_state(pending, chats, users)
 
     service = _assistant_service_for_user(linked["user_id"])
-    response = handle_command_with_llm(AssistantCommandRequest(text=text), service)
-    send_telegram_message(chat_id, format_telegram_reply(response))
+    response = handle_command_with_llm(
+        AssistantCommandRequest(text=text, history=history[-6:]),
+        service,
+    )
+    reply_text = format_telegram_reply(response)
+    send_telegram_message(chat_id, reply_text)
+    linked["recent_history"] = (history + [
+        {"role": "user", "text": text},
+        {"role": "assistant", "text": reply_text},
+    ])[-8:]
+    chats[chat_key] = linked
+    users[linked["user_id"]] = linked
+    _save_registry_state(pending, chats, users)
     return {"ok": True, "status": "processed", "action": response.action}

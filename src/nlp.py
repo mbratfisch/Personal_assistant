@@ -389,6 +389,64 @@ def _is_shopping_clear_command(text: str) -> bool:
     return has_shopping_target and has_clear_verb
 
 
+def _is_shopping_list_query(text: str) -> bool:
+    lowered = _match_text(text)
+    shopping_phrases = [
+        "shopping list",
+        "shopping items",
+        "my shopping",
+        "grocery list",
+        "groceries",
+        "lista de compras",
+        "lista de supermercado",
+        "compras",
+    ]
+    list_phrases = [
+        "what is on",
+        "what's on",
+        "what do i have on",
+        "what do i have in",
+        "show me",
+        "show my",
+        "list my",
+        "list",
+        "mostrar",
+        "mostra",
+        "muestre",
+        "ensina",
+        "ensene",
+        "que tenho",
+        "que hay",
+        "que tenho na",
+        "que tenho na minha",
+        "que tengo en",
+        "que tengo en mi",
+        "quais itens",
+        "what items",
+    ]
+    return any(shopping in lowered for shopping in shopping_phrases) and any(
+        phrase in lowered for phrase in list_phrases
+    )
+
+
+def _extract_shopping_add_items(text: str) -> list[str]:
+    cleaned = re.sub(r"^(add|put|buy)\s+", "", text, flags=re.IGNORECASE)
+    cleaned = re.sub(
+        r"\s+(to|into|on|for|at)\s+(my\s+)?(shopping list|shopping items|shopping|grocery list|groceries)\b",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(
+        r"\s+(a|la|na|no|para a|para a minha|para minha)\s+(lista de compras|lista de supermercado|compras)\b",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(r"\s+(please|por favor)\b", "", cleaned, flags=re.IGNORECASE).strip(" .")
+    return [item for item in _split_shopping_items(cleaned) if item]
+
+
 def _extract_after_keyword(text: str, keyword: str) -> str | None:
     match = re.search(rf"\b{keyword}\b\s+(.+)$", text, flags=re.IGNORECASE)
     return match.group(1).strip(" .") if match else None
@@ -457,6 +515,37 @@ def _looks_actionable_but_ambiguous(text: str) -> bool:
         "preciso",
     ]
     return any(signal in lowered for signal in signals)
+
+
+def _is_bill_list_query(lowered: str) -> bool:
+    bill_terms = [
+        "bill",
+        "bills",
+        "cuenta",
+        "cuentas",
+        "factura",
+        "facturas",
+        "conta",
+        "contas",
+        "fatura",
+        "faturas",
+    ]
+    list_terms = [
+        "show",
+        "list",
+        "what",
+        "which",
+        "due",
+        "to pay",
+        "para pagar",
+        "que",
+        "quais",
+        "tenho",
+        "tengo",
+        "preciso pagar",
+        "need to pay",
+    ]
+    return any(term in lowered for term in bill_terms) and any(term in lowered for term in list_terms)
 
 
 def handle_command(request: AssistantCommandRequest, service: AssistantService) -> AssistantCommandResponse:
@@ -703,7 +792,17 @@ def handle_command(request: AssistantCommandRequest, service: AssistantService) 
             data={"name": name, "exists": False},
         )
 
-    if any(token in lowered for token in ["what is on my shopping list", "what's on my shopping list", "show my shopping list", "list my shopping list"]):
+    if _is_shopping_list_query(text) or any(token in lowered for token in [
+        "what is on my shopping list",
+        "what's on my shopping list",
+        "what do i have on my shopping list",
+        "what do i have in my shopping list",
+        "show my shopping list",
+        "show me my shopping list",
+        "show me my shopping items",
+        "show me my shopping",
+        "list my shopping list",
+    ]):
         items = service.list_shopping_items(status=ItemStatus.active)
         return AssistantCommandResponse(
             action="list_shopping_items",
@@ -711,7 +810,16 @@ def handle_command(request: AssistantCommandRequest, service: AssistantService) 
             data={"items": [item.model_dump(mode="json") for item in items]},
         )
 
-    if any(token in lowered for token in ["show my tasks", "list my tasks", "what are my tasks"]):
+    if any(token in lowered for token in [
+        "show my tasks",
+        "list my tasks",
+        "what are my tasks",
+        "que tareas tengo",
+        "quais tarefas tenho",
+        "que tarefas eu tenho",
+        "lista minhas tarefas",
+        "muestre mis tareas",
+    ]):
         tasks = service.list_tasks(status=ItemStatus.active)
         return AssistantCommandResponse(
             action="list_tasks",
@@ -719,7 +827,20 @@ def handle_command(request: AssistantCommandRequest, service: AssistantService) 
             data={"tasks": [task.model_dump(mode="json") for task in tasks]},
         )
 
-    if any(token in lowered for token in ["show my bills", "list my bills", "what bills do i have"]):
+    if _is_bill_list_query(lowered) or any(token in lowered for token in [
+        "show my bills",
+        "list my bills",
+        "what bills do i have",
+        "what bills do i have to pay",
+        "what do i need to pay",
+        "que cuentas tengo para pagar",
+        "que facturas tengo para pagar",
+        "que contas eu tenho para pagar",
+        "quais contas eu tenho para pagar",
+        "quais faturas eu tenho para pagar",
+        "mostra minhas contas",
+        "liste minhas contas",
+    ]):
         bills = service.list_bills(status=ItemStatus.active)
         return AssistantCommandResponse(
             action="list_bills",
@@ -727,7 +848,16 @@ def handle_command(request: AssistantCommandRequest, service: AssistantService) 
             data={"bills": [bill.model_dump(mode="json") for bill in bills]},
         )
 
-    if any(token in lowered for token in ["show my reminders", "list my reminders", "what reminders do i have"]):
+    if any(token in lowered for token in [
+        "show my reminders",
+        "list my reminders",
+        "what reminders do i have",
+        "que recordatorios tengo",
+        "quais lembretes tenho",
+        "que lembretes eu tenho",
+        "lista meus lembretes",
+        "muestre mis recordatorios",
+    ]):
         reminders = service.list_reminders(status=ReminderStatus.pending)
         return AssistantCommandResponse(
             action="list_reminders",
@@ -735,10 +865,20 @@ def handle_command(request: AssistantCommandRequest, service: AssistantService) 
             data={"reminders": [reminder.model_dump(mode="json") for reminder in reminders]},
         )
 
-    if "shopping list" in lowered and re.match(r"^(add|put|buy)\b", lowered):
-        cleaned = re.sub(r"^(add|put)\s+", "", text, flags=re.IGNORECASE)
-        cleaned = re.sub(r"\s+to\s+(my\s+)?shopping list\.?$", "", cleaned, flags=re.IGNORECASE)
-        items = [_ for _ in _split_shopping_items(cleaned) if _]
+    if re.match(r"^(add|put|buy)\b", lowered) and any(
+        token in lowered
+        for token in [
+            "shopping list",
+            "shopping items",
+            "shopping",
+            "grocery list",
+            "groceries",
+            "lista de compras",
+            "lista de supermercado",
+            "compras",
+        ]
+    ):
+        items = _extract_shopping_add_items(text)
         created = []
         updated_existing = []
         for item in items:
@@ -999,11 +1139,26 @@ def handle_command(request: AssistantCommandRequest, service: AssistantService) 
                 data=updated.model_dump(mode="json"),
             )
 
-    if lowered.startswith("create a bill") or lowered.startswith("add bill") or lowered.startswith("bill:") or lowered.startswith("pay bill"):
+    if (
+        lowered.startswith("create a bill")
+        or lowered.startswith("add bill")
+        or lowered.startswith("bill:")
+        or lowered.startswith("pay bill")
+        or lowered.startswith("crear cuenta")
+        or lowered.startswith("crear factura")
+        or lowered.startswith("agregar cuenta")
+        or lowered.startswith("agregar factura")
+        or lowered.startswith("conta:")
+        or lowered.startswith("fatura:")
+        or lowered.startswith("criar conta")
+        or lowered.startswith("criar fatura")
+        or lowered.startswith("adicionar conta")
+        or lowered.startswith("adicionar fatura")
+    ):
         recurrence, interval = _extract_recurrence(lowered)
         due_segment = _extract_due_segment(text)
         due_at = _parse_datetime_phrase(due_segment, now) if due_segment else _parse_datetime_phrase(text, now)
-        name = re.sub(r"^(create a bill|add bill|bill:|pay bill)\s*(for)?\s*", "", text, flags=re.IGNORECASE)
+        name = re.sub(r"^(create a bill|add bill|bill:|pay bill|crear cuenta|crear factura|agregar cuenta|agregar factura|conta:|fatura:|criar conta|criar fatura|adicionar conta|adicionar fatura)\s*(for|para)?\s*", "", text, flags=re.IGNORECASE)
         name = re.sub(r"\s+due\b.*$", "", name, flags=re.IGNORECASE)
         name = re.sub(r"\s+for\s+\$?\d+(?:\.\d{1,2})?.*$", "", name, flags=re.IGNORECASE).strip(" .") or "Bill"
         amount = _extract_bill_amount(text)
@@ -1024,8 +1179,8 @@ def handle_command(request: AssistantCommandRequest, service: AssistantService) 
             data=bill.model_dump(mode="json"),
         )
 
-    if re.match(r"^(pay|paid)\b", lowered):
-        name = re.sub(r"^(pay|paid)\s+(bill\s+)?", "", text, flags=re.IGNORECASE).strip(" .")
+    if re.match(r"^(pay|paid|pagar|pague|paguei|paga|pago)\b", lowered):
+        name = re.sub(r"^(pay|paid|pagar|pague|paguei|paga|pago)\s+(bill\s+|cuenta\s+|factura\s+|conta\s+|fatura\s+)?", "", text, flags=re.IGNORECASE).strip(" .")
         resolved = _resolve_match(service.find_bill_matches_by_name(name), "bill", "name")
         if isinstance(resolved, AssistantCommandResponse):
             return resolved
