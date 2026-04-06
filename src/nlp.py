@@ -447,6 +447,40 @@ def _extract_shopping_add_items(text: str) -> list[str]:
     return [item for item in _split_shopping_items(cleaned) if item]
 
 
+def _looks_like_shopping_need_statement(text: str) -> bool:
+    lowered = _match_text(text)
+    prefixes = ["i need ", "necesito ", "preciso "]
+    if not any(lowered.startswith(prefix) for prefix in prefixes):
+        return False
+    if lowered.startswith("i need to "):
+        return False
+    blocked_need_starts = [
+        "necesito pagar ",
+        "necesito hacer ",
+        "necesito ir ",
+        "necesito llamar ",
+        "necesito enviar ",
+        "preciso pagar ",
+        "preciso fazer ",
+        "preciso ir ",
+        "preciso ligar ",
+        "preciso mandar ",
+        "preciso enviar ",
+    ]
+    if any(lowered.startswith(prefix) for prefix in blocked_need_starts):
+        return False
+    body = re.sub(r"^(i need|necesito|preciso)\s+", "", lowered, flags=re.IGNORECASE).strip(" .")
+    if not body:
+        return False
+    if _parse_datetime_phrase(text, datetime.utcnow()) is not None:
+        return False
+    if any(token in body for token in [" tomorrow", " today", " manana", " mañana", " amanha", " hoje", " hoy"]):
+        return False
+    if any(token in body for token in [" to ", " para ", " porque ", " que "]):
+        return False
+    return "," in body or " and " in body or " y " in body or " e " in body
+
+
 def _extract_after_keyword(text: str, keyword: str) -> str | None:
     match = re.search(rf"\b{keyword}\b\s+(.+)$", text, flags=re.IGNORECASE)
     return match.group(1).strip(" .") if match else None
@@ -865,20 +899,28 @@ def handle_command(request: AssistantCommandRequest, service: AssistantService) 
             data={"reminders": [reminder.model_dump(mode="json") for reminder in reminders]},
         )
 
-    if re.match(r"^(add|put|buy)\b", lowered) and any(
-        token in lowered
-        for token in [
-            "shopping list",
-            "shopping items",
-            "shopping",
-            "grocery list",
-            "groceries",
-            "lista de compras",
-            "lista de supermercado",
-            "compras",
-        ]
+    if (
+        (
+            re.match(r"^(add|put|buy)\b", lowered)
+            and any(
+                token in lowered
+                for token in [
+                    "shopping list",
+                    "shopping items",
+                    "shopping",
+                    "grocery list",
+                    "groceries",
+                    "lista de compras",
+                    "lista de supermercado",
+                    "compras",
+                ]
+            )
+        )
+        or _looks_like_shopping_need_statement(text)
     ):
-        items = _extract_shopping_add_items(text)
+        items = _extract_shopping_add_items(text) if re.match(r"^(add|put|buy)\b", lowered) else _split_shopping_items(
+            re.sub(r"^(i need|necesito|preciso)\s+", "", text, flags=re.IGNORECASE).strip(" .")
+        )
         created = []
         updated_existing = []
         for item in items:
