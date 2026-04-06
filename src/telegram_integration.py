@@ -419,6 +419,20 @@ def _format_created_reply(response: AssistantCommandResponse, data: dict[str, An
 
 def format_telegram_reply(response: AssistantCommandResponse) -> str:
     data = response.data or {}
+    if response.action in {
+        "agenda",
+        "summary",
+        "morning_briefing",
+        "evening_briefing",
+        "tomorrow_briefing",
+        "list_tasks",
+        "list_reminders",
+        "list_events",
+        "list_bills",
+        "list_shopping_items",
+        "list_notes",
+    } and response.message:
+        return response.message
     if response.action == "agenda":
         return _format_agenda(data)
     if response.action == "summary":

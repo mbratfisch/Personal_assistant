@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 from datetime import datetime
@@ -177,8 +178,17 @@ def _router_model() -> str:
     return (os.getenv("OPENAI_ASSISTANT_MODEL") or "gpt-5-nano").strip()
 
 
+def _reply_model() -> str:
+    return (os.getenv("OPENAI_ASSISTANT_REPLY_MODEL") or _router_model()).strip()
+
+
 def _trace_enabled() -> bool:
     return (os.getenv("APP_ASSISTANT_TRACE") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _natural_replies_enabled() -> bool:
+    raw = (os.getenv("APP_ASSISTANT_NATURAL_REPLIES") or "true").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 
 def _with_trace(response: AssistantCommandResponse, **trace: object) -> AssistantCommandResponse:
@@ -228,6 +238,81 @@ def _route_with_openai(text: str, history: list[dict] | None = None) -> LlmAssis
     if parsed is None:
         raise RuntimeError("OpenAI router returned no parsed output.")
     return parsed
+
+
+def _polishable_action(action: str) -> bool:
+    return action not in {
+        "pending_confirmation_yes",
+        "pending_confirmation_no",
+    }
+
+
+def _response_data_for_polish(response: AssistantCommandResponse) -> str:
+    data = response.data or {}
+    cleaned = {k: v for k, v in data.items() if k != "trace"}
+    try:
+        serialized = json.dumps(cleaned, ensure_ascii=False, default=str)
+    except Exception:
+        serialized = str(cleaned)
+    if len(serialized) > 3500:
+        serialized = serialized[:3500] + "...(truncated)"
+    return serialized
+
+
+def _polish_response_message(
+    request: AssistantCommandRequest,
+    response: AssistantCommandResponse,
+) -> AssistantCommandResponse:
+    if not _openai_enabled() or not _natural_replies_enabled() or not _polishable_action(response.action):
+        return response
+
+    from openai import OpenAI
+
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    system_prompt = """You rewrite personal assistant backend replies so they feel natural, warm, and concise.
+
+Rules:
+- Keep the facts exactly correct. Do not invent tasks, dates, counts, or outcomes.
+- Match the user's language when possible (English, Spanish, or Portuguese).
+- Sound like a capable assistant, not an API.
+- For list, agenda, summary, and briefing responses, give a short friendly lead-in plus useful bullets or short lines.
+- For successful create/update/complete/pay actions, acknowledge the result naturally in 1-3 short sentences.
+- For clarification_required, ask a short direct question and avoid robotic wording.
+- Do not mention internal systems, parsers, tools, traces, or JSON.
+- No markdown tables.
+- Keep the reply compact enough for chat.
+"""
+
+    user_prompt = (
+        f"User request:\n{request.text}\n\n"
+        f"Backend action:\n{response.action}\n\n"
+        f"Current backend message:\n{response.message}\n\n"
+        f"Structured data:\n{_response_data_for_polish(response)}\n\n"
+        "Rewrite the final assistant reply."
+    )
+
+    try:
+        result = client.responses.create(
+            model=_reply_model(),
+            input=[
+                {"role": "system", "content": [{"type": "input_text", "text": system_prompt}]},
+                {"role": "user", "content": [{"type": "input_text", "text": user_prompt}]},
+            ],
+        )
+        polished = (getattr(result, "output_text", None) or "").strip()
+    except Exception:
+        return response
+
+    if not polished:
+        return response
+
+    return AssistantCommandResponse(
+        action=response.action,
+        message=polished,
+        created_type=response.created_type,
+        created_id=response.created_id,
+        data=response.data,
+    )
 
 
 def _list_message(count: int, noun: str) -> str:
@@ -839,7 +924,8 @@ def handle_command_with_llm(
     record_diagnostic: bool = True,
 ) -> AssistantCommandResponse:
     def finish(response: AssistantCommandResponse, **trace: object) -> AssistantCommandResponse:
-        enriched = _with_trace(response, **trace)
+        polished = _polish_response_message(request, response)
+        enriched = _with_trace(polished, **trace)
         if record_diagnostic:
             service.record_assistant_diagnostic(request.text, enriched)
         return enriched
