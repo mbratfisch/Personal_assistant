@@ -443,8 +443,32 @@ def _extract_shopping_add_items(text: str) -> list[str]:
         cleaned,
         flags=re.IGNORECASE,
     )
+    cleaned = re.sub(r"\s+to\s+buy(?:\s+at\s+.+)?$", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+to\s+get(?:\s+at\s+.+)?$", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+para\s+comprar(?:\s+en\s+.+)?$", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+para\s+comprar(?:\s+no\s+.+)?$", "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\s+(please|por favor)\b", "", cleaned, flags=re.IGNORECASE).strip(" .")
     return [item for item in _split_shopping_items(cleaned) if item]
+
+
+def _looks_like_shopping_add_statement(text: str) -> bool:
+    lowered = _match_text(text)
+    if not re.match(r"^(add|put|buy)\b", lowered):
+        return False
+    shopping_targets = [
+        "shopping list",
+        "shopping items",
+        "shopping",
+        "grocery list",
+        "groceries",
+        "lista de compras",
+        "lista de supermercado",
+        "compras",
+        "to buy",
+        "to get",
+        "para comprar",
+    ]
+    return any(token in lowered for token in shopping_targets)
 
 
 def _looks_like_shopping_need_statement(text: str) -> bool:
@@ -899,25 +923,7 @@ def handle_command(request: AssistantCommandRequest, service: AssistantService) 
             data={"reminders": [reminder.model_dump(mode="json") for reminder in reminders]},
         )
 
-    if (
-        (
-            re.match(r"^(add|put|buy)\b", lowered)
-            and any(
-                token in lowered
-                for token in [
-                    "shopping list",
-                    "shopping items",
-                    "shopping",
-                    "grocery list",
-                    "groceries",
-                    "lista de compras",
-                    "lista de supermercado",
-                    "compras",
-                ]
-            )
-        )
-        or _looks_like_shopping_need_statement(text)
-    ):
+    if _looks_like_shopping_add_statement(text) or _looks_like_shopping_need_statement(text):
         items = _extract_shopping_add_items(text) if re.match(r"^(add|put|buy)\b", lowered) else _split_shopping_items(
             re.sub(r"^(i need|necesito|preciso)\s+", "", text, flags=re.IGNORECASE).strip(" .")
         )
