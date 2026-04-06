@@ -365,6 +365,30 @@ def _format_summary(data: dict[str, Any]) -> str:
     return "\n".join(lines[:20])
 
 
+def _message_has_detail_lines(text: str) -> bool:
+    lowered = text.lower()
+    return "\n-" in text or any(
+        marker in lowered
+        for marker in [
+            "\nevents:",
+            "\nreminders:",
+            "\ntasks:",
+            "\nbills:",
+            "\nshopping items:",
+            "\nnotes:",
+            "\npriority tasks:",
+            "\ndue reminders:",
+            "\nupcoming events:",
+            "\nnext:",
+        ]
+    )
+
+
+def _fallback_body(fallback: str) -> str:
+    parts = fallback.split("\n", 1)
+    return parts[1].strip() if len(parts) > 1 else fallback.strip()
+
+
 def _format_list_reply(response: AssistantCommandResponse, data: dict[str, Any]) -> str | None:
     mapping = [
         ("tasks", "Tasks", "title"),
@@ -419,7 +443,35 @@ def _format_created_reply(response: AssistantCommandResponse, data: dict[str, An
 
 def format_telegram_reply(response: AssistantCommandResponse) -> str:
     data = response.data or {}
+    if response.action == "agenda":
+        fallback = _format_agenda(data)
+        if response.message and _message_has_detail_lines(response.message):
+            return response.message
+        body = _fallback_body(fallback)
+        return f"{response.message}\n\n{body}".strip() if response.message else fallback
+
+    if response.action in {"summary", "morning_briefing", "evening_briefing", "tomorrow_briefing"}:
+        fallback = _format_summary(data)
+        if response.message and _message_has_detail_lines(response.message):
+            return response.message
+        body = _fallback_body(fallback)
+        return f"{response.message}\n\n{body}".strip() if response.message else fallback
+
     if response.action in {
+        "list_tasks",
+        "list_reminders",
+        "list_events",
+        "list_bills",
+        "list_shopping_items",
+        "list_notes",
+    } and response.message:
+        fallback = _format_list_reply(response, data)
+        if not fallback or _message_has_detail_lines(response.message):
+            return response.message
+        body = _fallback_body(fallback)
+        return f"{response.message}\n\n{body}".strip()
+
+    if response.message and response.action in {
         "agenda",
         "summary",
         "morning_briefing",
@@ -431,12 +483,8 @@ def format_telegram_reply(response: AssistantCommandResponse) -> str:
         "list_bills",
         "list_shopping_items",
         "list_notes",
-    } and response.message:
+    }:
         return response.message
-    if response.action == "agenda":
-        return _format_agenda(data)
-    if response.action == "summary":
-        return _format_summary(data)
     created_reply = _format_created_reply(response, data)
     if created_reply is not None:
         return created_reply
