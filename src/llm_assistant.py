@@ -106,6 +106,7 @@ Rules:
 - Use mode="clarification" if the request is ambiguous in a way that could change or delete data.
 - Use mode="canonical_command" only when a short safe command string is the best fallback.
 - Use mode="unsupported" if you truly cannot map the request safely.
+- For normal personal-organizer requests, avoid mode="unsupported" unless the request is clearly outside tasks, reminders, events, notes, shopping, bills, summaries, briefings, or Google Calendar actions.
 - Never invent existing user data.
 - Keep clarification questions short and practical.
 - Do not ask numbered multiple-choice questions.
@@ -144,9 +145,12 @@ Available tool actions:
 - sync_event_google
 
 Guidance:
+- Informal phrasing is still valid. Requests like "show me my shopping", "what do I need to pay", "what do I have tomorrow", or "put milk and eggs on shopping" should be mapped to the closest safe supported action.
 - "calendar" can be ambiguous. If the user says "clear my calendar", ask whether they mean Google Calendar or local assistant events.
 - If local assistant events are not directly supported for that action, ask only about Google Calendar or ask the user to say the exact source they want.
 - For shopping additions, put each item in items.
+- For shopping list viewing requests, use list_items with list_type="shopping".
+- For shopping additions like "add milk and eggs to shopping", "put eggs on my list", or similar, use add_shopping_items.
 - For agenda/day questions, put the target day phrase in date_text like "today", "tomorrow", or "Friday".
 - For reminder/task/event creation, put the subject in title and the time phrase in when_text.
 - For move/cancel/rename/pay actions, put the existing item name in target_title.
@@ -154,6 +158,8 @@ Guidance:
 - For bill amount changes, put the numeric value in amount.
 - For briefings, set briefing_kind to morning, evening, or tomorrow.
 - For list_items, set list_type to tasks, reminders, bills, shopping, notes, or events.
+- For bill-list questions like "what do I need to pay" or "which bills are due", use list_items with list_type="bills".
+- For task, reminder, note, or event list questions, prefer list_items over unsupported.
 - For commands like "mark X done", use complete_task.
 - For commands like "move X to Friday", use move_task, move_reminder, or move_event depending on the object.
 - For commands like "put X on Google Calendar", use sync_task_google, sync_reminder_google, or sync_event_google.
@@ -184,16 +190,32 @@ def _with_trace(response: AssistantCommandResponse, **trace: object) -> Assistan
     return response
 
 
-def _route_with_openai(text: str) -> LlmAssistantPlan:
+def _route_with_openai(text: str, history: list[dict] | None = None) -> LlmAssistantPlan:
     from openai import OpenAI
 
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+    system_prompt = SYSTEM_PROMPT
+    if history:
+        context_lines = []
+        for msg in history[-6:]:
+            role = "User" if msg.get("role") == "user" else "Assistant"
+            content = (msg.get("text") or "").strip()
+            if content:
+                context_lines.append(f"{role}: {content}")
+        if context_lines:
+            system_prompt = (
+                f"{SYSTEM_PROMPT}\n\n"
+                f"Recent conversation context (use this to understand follow-up references):\n"
+                + "\n".join(context_lines)
+            )
+
     response = client.responses.parse(
         model=_router_model(),
         input=[
             {
                 "role": "system",
-                "content": [{"type": "input_text", "text": SYSTEM_PROMPT}],
+                "content": [{"type": "input_text", "text": system_prompt}],
             },
             {
                 "role": "user",
@@ -218,6 +240,13 @@ CLASSIFICATION_TYPES = {"task", "reminder", "event", "shopping", "shopping item"
 
 def _format_bill_name(bill: Bill) -> str:
     return f"{bill.name} ({bill.currency} {bill.amount:,.2f})"
+
+
+def _llm_fallback_clarification_message() -> str:
+    return (
+        "I’m not fully sure yet. Are you trying to view, add, update, complete, pay, "
+        "or remove something in tasks, reminders, shopping, bills, notes, events, or calendar?"
+    )
 
 
 def _resolve_single_match(matches: list, entity_name: str, label_field: str) -> AssistantCommandResponse | object:
@@ -818,6 +847,7 @@ def handle_command_with_llm(
     normalized = " ".join(request.text.strip().split())
     lowered = _match_text(normalized)
     pending = service.get_pending_confirmation()
+    direct = handle_command(request, service)
 
     if "clear" in lowered and "calendar" in lowered and "google" not in lowered:
         proposed = "clear my google calendar for today"
@@ -913,17 +943,6 @@ def handle_command_with_llm(
             source="google_calendar_create_heuristic",
         )
 
-    direct = handle_command(request, service)
-    if direct.action == "unknown" and direct.message.startswith("I could not confidently classify that yet."):
-        service.set_pending_confirmation(
-            question=direct.message,
-            proposed_command=f"{CLASSIFICATION_PREFIX}{request.text}",
-        )
-        return finish(
-            direct,
-            source="rule_parser_classification_clarification",
-            parser_action=direct.action,
-        )
     if direct.action == "confirm_calendar_clear_target":
         proposed = "clear my google calendar for today"
         target = _extract_agenda_target(request.text, request.now or service.current_time(service.get_settings()))
@@ -943,65 +962,130 @@ def handle_command_with_llm(
             parser_action=direct.action,
             proposed_command=proposed,
         )
-    if direct.action != "unknown":
+
+    if direct.action != "unknown" and direct.action not in {"google_calendar_test_hint"}:
         return finish(direct, source="rule_parser", parser_action=direct.action)
 
-    if not _openai_enabled():
-        return finish(direct, source="rule_parser_fallback", reason="openai_disabled")
+    if _openai_enabled():
+        try:
+            plan = _route_with_openai(normalized, history=request.history)
+        except Exception as exc:
+            plan = None
+            llm_error = type(exc).__name__
+        else:
+            llm_error = None
 
-    try:
-        plan = _route_with_openai(normalized)
-    except Exception as exc:
+        if plan is not None:
+            if plan.mode == "clarification" and plan.clarification_question:
+                proposed = plan.suggested_confirmation_command or plan.canonical_command
+                if proposed:
+                    service.set_pending_confirmation(
+                        question=plan.clarification_question,
+                        proposed_command=proposed,
+                    )
+                return finish(AssistantCommandResponse(
+                    action="clarification_required",
+                    message=plan.clarification_question,
+                    data={"proposed_command": proposed} if proposed else None,
+                ), source="llm_clarification", llm_mode=plan.mode, llm_action=plan.action, proposed_command=proposed)
+
+            if plan.mode == "tool" and plan.action:
+                executed = _execute_plan(plan, request, service)
+                if executed.action != "unknown":
+                    return finish(
+                        executed,
+                        source="llm_tool",
+                        llm_mode=plan.mode,
+                        llm_action=plan.action,
+                        target_title=plan.target_title,
+                        title=plan.title,
+                    )
+
+            if plan.mode == "canonical_command" and plan.canonical_command:
+                executed = handle_command(
+                    AssistantCommandRequest(text=plan.canonical_command, now=request.now),
+                    service,
+                )
+                if executed.action != "unknown":
+                    return finish(
+                        executed,
+                        source="llm_canonical_command",
+                        llm_mode=plan.mode,
+                        canonical_command=plan.canonical_command,
+                    )
+
+            if direct.action == "unknown" and direct.message.startswith("I could not confidently classify that yet."):
+                service.set_pending_confirmation(
+                    question=direct.message,
+                    proposed_command=f"{CLASSIFICATION_PREFIX}{request.text}",
+                )
+                return finish(
+                    direct,
+                    source="rule_parser_classification_clarification",
+                    parser_action=direct.action,
+                    llm_mode=plan.mode,
+                    llm_action=plan.action,
+                )
+
+            if direct.action == "unknown":
+                return finish(
+                    AssistantCommandResponse(
+                        action="clarification_required",
+                        message=_llm_fallback_clarification_message(),
+                    ),
+                    source="llm_fallback_clarification",
+                    reason="llm_no_executable_result",
+                    llm_mode=plan.mode,
+                    llm_action=plan.action,
+                    canonical_command=plan.canonical_command,
+                )
+
+            return finish(
+                direct,
+                source="rule_parser_fallback",
+                reason="llm_no_executable_result",
+                llm_mode=plan.mode,
+                llm_action=plan.action,
+                canonical_command=plan.canonical_command,
+            )
+
+        if direct.action == "unknown":
+            return finish(
+                AssistantCommandResponse(
+                    action="clarification_required",
+                    message=_llm_fallback_clarification_message(),
+                ),
+                source="llm_fallback_clarification",
+                reason="openai_error",
+                error_type=llm_error,
+            )
+
         return finish(
             direct,
             source="rule_parser_fallback",
             reason="openai_error",
-            error_type=type(exc).__name__,
+            error_type=llm_error,
         )
 
-    if plan.mode == "clarification" and plan.clarification_question:
-        proposed = plan.suggested_confirmation_command or plan.canonical_command
-        if proposed:
-            service.set_pending_confirmation(
-                question=plan.clarification_question,
-                proposed_command=proposed,
-            )
-        return finish(AssistantCommandResponse(
-            action="clarification_required",
-            message=plan.clarification_question,
-            data={"proposed_command": proposed} if proposed else None,
-        ), source="llm_clarification", llm_mode=plan.mode, llm_action=plan.action, proposed_command=proposed)
-
-    if plan.mode == "tool" and plan.action:
-        executed = _execute_plan(plan, request, service)
-        if executed.action != "unknown":
-            return finish(
-                executed,
-                source="llm_tool",
-                llm_mode=plan.mode,
-                llm_action=plan.action,
-                target_title=plan.target_title,
-                title=plan.title,
-            )
-
-    if plan.mode == "canonical_command" and plan.canonical_command:
-        executed = handle_command(
-            AssistantCommandRequest(text=plan.canonical_command, now=request.now),
-            service,
+    if direct.action == "unknown" and direct.message.startswith("I could not confidently classify that yet."):
+        service.set_pending_confirmation(
+            question=direct.message,
+            proposed_command=f"{CLASSIFICATION_PREFIX}{request.text}",
         )
-        if executed.action != "unknown":
-            return finish(
-                executed,
-                source="llm_canonical_command",
-                llm_mode=plan.mode,
-                canonical_command=plan.canonical_command,
-            )
-
-    return finish(
-        direct,
-        source="rule_parser_fallback",
-        reason="llm_no_executable_result",
-        llm_mode=plan.mode,
-        llm_action=plan.action,
-        canonical_command=plan.canonical_command,
-    )
+        return finish(
+            direct,
+            source="rule_parser_classification_clarification",
+            parser_action=direct.action,
+        )
+    if direct.action == "unknown":
+        return finish(
+            AssistantCommandResponse(
+                action="clarification_required",
+                message=_llm_fallback_clarification_message(),
+            ),
+            source="llm_fallback_clarification",
+            reason="openai_disabled",
+        )
+    if direct.action != "unknown":
+        return finish(direct, source="rule_parser", parser_action=direct.action)
+    return finish(direct, source="rule_parser_fallback", reason="openai_disabled")
